@@ -1,0 +1,5 @@
+aapm_dataset:
+  dataset_name: AAPM
+  dataset_path: datasets
+  train_set: ["train/input"]
+  val_set: ["val/input"]
