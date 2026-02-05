@@ -1,10 +1,5 @@
 from model.transsino import Transformer
 import torch
-# from fairscale.nn.model_parallel.initialize import (
-#     get_model_parallel_rank,
-#     initialize_model_parallel,
-#     model_parallel_is_initialized,
-# )
 from model.vit_seg_modeling import CONFIGS as CONFIGS_ViT_seg
 import os
 from dataset.data_loader import AAPMDataLoader
@@ -15,10 +10,8 @@ import yaml
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-# from utils import VGGPerceptualLoss as vgg
 import argparse
 import math
-# import odl
 from torchvision.utils import save_image
 import seaborn as sns
 from sklearn.manifold import TSNE
@@ -29,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train Transformer for sinogram view synthesis")
     parser.add_argument("--config", default='path/to/config', type=str, 
                         help="Path to the config file")
-    parser.add_argument("--ckpt", default='ckpt/model_epoch_109.pth', type=str, 
+    parser.add_argument("--ckpt", default='ckpt/', type=str, 
                         help="Path to the checkpoint file for loading the model")
     parser.add_argument("--num_classes", default=2, type=int,
                         help="Number of classes")
@@ -90,10 +83,6 @@ def load_config(config_path):
 
 
 def ssim_torch(img1, img2, window_size=11, sigma=1.5, data_range=1.0, K1=0.01, K2=0.03):
-    """
-    img1, img2: torch tensor, shape [B,1,H,W] (또는 [B,H,W])
-    값 범위는 0~1 권장
-    """
     if img1.dim() == 3:
         img1 = img1.unsqueeze(1)
     if img2.dim() == 3:
@@ -171,29 +160,19 @@ if __name__ == "__main__":
     os.makedirs("val_figure", exist_ok=True)
 
     if os.path.isfile(args.ckpt):
-        # --- [수정된 부분: 예전 파라미터 살려서 로드하기] ---
         checkpoint = torch.load(args.ckpt)
         if 'learnable_prior_patterns' in checkpoint:
             ckpt_param = checkpoint['learnable_prior_patterns']
             model_shape = transformer.learnable_prior_patterns.shape # [1, 400, 352, 352]
             
-            # 체크포인트가 3차원 [400, 352, 352] 이라면
             if ckpt_param.dim() == 3:
                 print(f"[Info] Reshaping 'learnable_prior_patterns' from {ckpt_param.shape} to {model_shape}")
-                
-                # 3차원 -> 4차원으로 변경 (맨 앞에 1 추가)
-                # [400, 352, 352] -> [1, 400, 352, 352]
                 checkpoint['learnable_prior_patterns'] = ckpt_param.unsqueeze(0)
                 
         # ------------------------------------------------
         transformer.load_state_dict(checkpoint, strict=False)
-
-        #transformer.load_state_dict(torch.load(args.ckpt), strict=False)
         print(f"Model weights loaded from {args.ckpt}")
 
-    # pos_data_val = np.load("pos_data/prior_sino.npy")
-    # pos_data_val = torch.from_numpy(pos_data_val).unsqueeze(0)
-    
     val_loader = AAPMDataLoader(dataset=config.aapm_dataset, batch_size=1, shuffle=True, num_workers=0, train_val="val").get_loader()
     total_psnr = 0
     num_images = 0
@@ -220,18 +199,8 @@ if __name__ == "__main__":
             input_sino_val = input_sino_val.to('cuda')
             label_val = label_val.to('cuda')
             
-            # 이미지, 사이노그램램
-            #op_val, op_val2, seg_val, _, attn_score = transformer.forward(input_sino_val, start_pos, pos_data_val, min_value_val, max_value_val)
-
-            # pos_data_val을 제거하고 4개의 인자만 전달. prior pattern을 파라미터화 하고 돌리는 코드
             op_val, op_val2, seg_val, _, attn_score, pred_dose_val = transformer.forward(input_sino_val, start_pos, min_value_val, max_value_val)
 
-
-            # dv_op_val = op_val
-            # dv_op_val = torch.clamp(dv_op_val, 0, 1)
-            # psnr_val = calculate_psnr(dv_op_val, img_val)
-            # total_psnr += psnr_val
-            
             dv_op_val = torch.clamp(op_val, 0, 1)
             gt_img = torch.clamp(img_val, 0, 1)
 
@@ -256,32 +225,8 @@ if __name__ == "__main__":
             seg_val = torch.argmax(seg_iradon, dim=1).squeeze(0).detach().cpu().numpy()
             label_val = label_val.squeeze(0).detach().cpu().numpy()
             
-
-            # --- [추가된 부분: 현재 이미지의 Metric 계산] ---
-            # Class 1 (병변/장기)에 대한 Dice와 HD95를 계산합니다.
-            # calculate_metric_percase 함수는 utils.metrics에 정의되어 있어야 합니다.
             cur_dice, cur_hd95 = calculate_metric_percase(seg_val == 1, label_val == 1)
-            # -------------------------------------------
             
-            # file_name = file_name[0]
-            # file_name = file_name.split('_sino_')[1]
-            # if attn_score.shape != (1, 400, 400):
-            #     print('shape error!')
-            #     print(f'current shape : {attn_score.shape}')
-                
-            # if file_name == '1.npy':
-            #     X.append(attn_score.squeeze(0).detach().cpu().numpy().flatten())
-            #     y.append("1% dose")
-            # elif file_name == '10.npy':
-            #     X.append(attn_score.squeeze(0).detach().cpu().numpy().flatten())
-            #     y.append("10% dose")
-            # elif file_name == '25.npy':
-            #     X.append(attn_score.squeeze(0).detach().cpu().numpy().flatten())
-            #     y.append("25% dose")
-            # else:
-            #     print('file name error!')
-            
-            # --- [SAVE] op_val2 & mask (grayscale) ---
             file_stem = os.path.splitext(file_name[0])[0]
 
             fn_op  = f"{file_stem}_psnr{psnr_val:.2f}_ssim{ssim_val:.4f}_op_val2.png"
@@ -289,17 +234,14 @@ if __name__ == "__main__":
 
             plt.imsave(os.path.join("val_op_val2", fn_op), dv_op_val, cmap="gray", vmin=0, vmax=1)
 
-            # (2) mask 저장 (grayscale: 0 background, 255 foreground)
             mask_u8 = (seg_val != 0).astype(np.uint8) * 255
             plt.imsave(os.path.join("val_masked_seg", fn_msk), mask_u8, cmap="gray", vmin=0, vmax=255)
             # ----------------------------------------
 
 
-            # 입력 이미지, 원본 사이노그램, 입력 사이노그램, low dose image, 복원된 사이노그램, 복원된 이미지
             plt.figure(figsize=(20,5))
             plt.subplot(1, 6, 1)
             plt.imshow(img_val, cmap='gray')
-            # 배경(0)을 마스킹하여 투명하게 만듦
             masked_label = np.ma.masked_where(label_val == 0, label_val)
             plt.imshow(masked_label, cmap='jet', alpha=0.6)
             plt.title("original image"); plt.axis('off')
@@ -322,7 +264,6 @@ if __name__ == "__main__":
             
             plt.subplot(1, 6, 6)
             plt.imshow(dv_op_val, cmap='gray')
-            # 배경(0)을 마스킹하여 투명하게 만듦
             masked_seg = np.ma.masked_where(seg_val == 0, seg_val)
             plt.imshow(masked_seg, cmap='jet', alpha=0.6)
             plt.title(f"Recon (PSNR: {psnr_val:.2f})\nDice: {cur_dice:.4f}, HD: {cur_hd95:.2f}", fontsize=10); plt.axis('off')
@@ -336,103 +277,6 @@ if __name__ == "__main__":
             plt.savefig(graph_path)
             plt.close()
         
-        # X = np.array(X)
-        # y = np.array(y)
-        
-        # tsne = TSNE(n_components=2, perplexity=30, random_state=42)
-        # X_tsne = tsne.fit_transform(X)
-        
-        # plt.figure(figsize=(8,6))
-        # for dose in np.unique(y):
-        #     idx = (y == dose)
-        #     plt.scatter(X_tsne[idx, 0], X_tsne[idx, 1], label=dose, alpha=0.6, s=20)
-        
-        # plt.legend()
-        # plt.show()
-        
-        #print(total_psnr / len(val_loader))
         mean_psnr = total_psnr / max(count, 1)
         mean_ssim = total_ssim / max(count, 1)
         print(f"[VAL] Mean PSNR: {mean_psnr:.4f} | Mean SSIM: {mean_ssim:.6f} | N={count}")
-
-
-
-
-    # metric_list = 0.0
-    # total_dice = 0.0
-    # with torch.no_grad():
-    #     for img_val, full_sino_val, input_sino_val, max_value_val, min_value_val, sino_label_val, label_val, file_name, dose_val in tqdm(val_loader):
-    #         full_sino_val = full_sino_val.to("cuda")
-    #         img_val = img_val.to("cuda")
-    #         max_value_val = max_value_val.to("cuda")
-    #         min_value_val = min_value_val.to('cuda')
-    #         input_sino_val = input_sino_val.to('cuda')
-    #         label_val = label_val.to('cuda')
-            
-    #         # [핵심] Forward Pass: op_val2 (recon sino)와 attn_score는 사용하지 않습니다.
-    #         op_val, _, seg_val, _, _ = transformer.forward(input_sino_val, start_pos, min_value_val, max_value_val)
-            
-    #         # 1. Seg Logits를 Image Domain으로 재구성 (FBP)
-    #         seg_iradon = radon(seg_val)
-            
-    #         # 2. 최종 마스크 예측 (Logits -> Softmax -> Argmax)
-    #         seg_out_val = torch.argmax(torch.softmax(seg_iradon, dim=1), dim=1).squeeze(0)
-
-    #         # 3. 데이터 후처리 (Numpy 변환)
-    #         dv_op_val = op_val.squeeze(0).detach().cpu().numpy() # 복원 이미지 (배경으로 사용하지 않음)
-    #         img_val_np = img_val.squeeze(0).detach().cpu().numpy() # 원본 이미지
-    #         label_val_np = label_val.squeeze(0).detach().cpu().numpy() # GT 라벨
-    #         prediction_np = seg_out_val.cpu().detach().numpy() # 예측 마스크
-            
-    #         # 4. 시각화 (원본 이미지 위에 예측 결과를 겹치기)
-    #         plt.figure(figsize=(15, 5))
-            
-    #         # Subplot 1: Original Image + GT Label (정답 확인용)
-    #         plt.subplot(1, 3, 1)
-    #         plt.imshow(img_val_np, cmap='gray')
-    #         masked_label = np.ma.masked_where(label_val_np == 0, label_val_np)
-    #         plt.imshow(masked_label, cmap='jet', alpha=0.4)
-    #         plt.title("Original Image (GT Label)"); plt.axis('off')
-            
-    #         # Subplot 2: Original Image + Predicted Mask (요청하신 최종 목표)
-    #         plt.subplot(1, 3, 2)
-    #         plt.imshow(img_val_np, cmap='gray') # <--- 원본 이미지를 배경으로 사용
-    #         masked_seg = np.ma.masked_where(prediction_np == 0, prediction_np)
-    #         plt.imshow(masked_seg, cmap='jet', alpha=0.4)
-    #         plt.title("Prediction on Original Image"); plt.axis('off')
-            
-    #         # Subplot 3: Predicted Mask Only
-    #         plt.subplot(1, 3, 3)
-    #         plt.imshow(prediction_np, cmap='jet'); plt.axis('off')
-    #         plt.title("Predicted Mask Only")
-            
-    #         file_name_clean = file_name[0][:-4] 
-    #         graph_path = f"val_figure/{file_name_clean}_seg_on_original.png"
-            
-    #         plt.savefig(graph_path)
-    #         plt.close()
-
-    #         # 4. 메트릭 계산 (Mean Dice 및 HD95)
-    #         metric_i = []
-    #         for i in range(1, vit_configs.n_classes): # Class 1 (병변)에 대해서만 계산
-    #             dice, hd95 = calculate_metric_percase(prediction_np == i, label_val_np == i)
-    #             metric_i.append((dice, hd95))
-    #             total_dice += dice
-
-    #         metric_list += np.array(metric_i)
-    #         num_images_val += 1
-            
-            
-            
-    #     # --- 최종 결과 출력 ---
-    #     avg_dice = total_dice / num_images_val
-        
-    #     print("\n--- Segmentation Only Metrics ---")
-    #     print(f"Total Processed Slices: {num_images_val}")
-        
-    #     metric_list = metric_list / num_images_val
-    #     for i in range(1, vit_configs.n_classes):
-    #         print(f'Mean Dice (Class 1): {metric_list[i-1][0]:.4f}')
-    #         print(f'Mean HD95 (Class 1): {metric_list[i-1][1]:.4f}')
-        
-    #     print("\n✅ Segmentation Only Validation Complete.")
