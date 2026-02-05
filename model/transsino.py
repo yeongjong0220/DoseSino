@@ -1,6 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
-
 import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -27,7 +24,7 @@ class RealTimeMIProcessor(nn.Module):
         bins=64,
         patch_h=32,
         patch_w=32,
-        window_size=5,                 # ✅ patch-grid window size 
+        window_size=5,                 #  patch-grid window size 
         # windowing options (intensity clipping)
         window_mode="minmax",          # {"minmax", "fixed", "percentile"}
         window_min=None,              # used if window_mode="fixed"
