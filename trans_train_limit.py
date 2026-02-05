@@ -22,12 +22,12 @@ from torch_radon import Radon
 from utils.custom_losses import VGGPerceptualLoss, FrequencyLoss 
 matplotlib.use('Agg')
 
-torch.autograd.set_detect_anomaly(True)  # NaN/inf 발생 지점 traceback
+torch.autograd.set_detect_anomaly(True) 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Transformer for sinogram view synthesis")
     parser.add_argument("--config", default='path/to/config', type=str, 
                         help="Path to the config file")
-    parser.add_argument("--ckpt", default='ckpt/model_epoch_102.pth', type=str,
+    parser.add_argument("--ckpt", default='ckpt/', type=str,
                         help="Path to the checkpoint file for loading the model")
     parser.add_argument("--log", default='log', type=str,
                         help="Path to the log file")
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     for name, param in transformer.named_parameters():
         if "learnable_prior_patterns" in name:
             prior_params.append(param)
-            print(f"Detected Prior Parameter: {name}") # 확인용 출력
+            print(f"Detected Prior Parameter: {name}") =
         else: 
             other_params.append(param)
 
@@ -187,7 +187,7 @@ if __name__ == "__main__":
         t_l2loss = 0
         #t_fbploss = 0
         t_segloss = 0
-        epoch_dose_mae = 0.0  # 누적 변수 초기화 (필수!)
+        epoch_dose_mae = 0.0 =
         with tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}") as pbar:
             for img, full_sino, input_sino, max_value, min_value, sino_label, label, _, dose in pbar:
                 max_value = max_value.to("cuda")
@@ -211,10 +211,9 @@ if __name__ == "__main__":
                 B, C, H, W = seg_results.shape
                 seg_reshaped = seg_results.view(B * C, H, W) 
                 
-                # 2. Radon 역변환 수행
+                # 2. Radon backward
                 seg_img_reshaped = radon(seg_reshaped) 
                 
-                # 3. 다시 [Batch, Class, 300, 300]으로 복구
                 new_H, new_W = seg_img_reshaped.shape[-2], seg_img_reshaped.shape[-1]
                 seg_iradon = seg_img_reshaped.view(B, C, new_H, new_W)
                 loss_ce = ce_loss(seg_iradon, label[:].long())
@@ -272,11 +271,8 @@ if __name__ == "__main__":
         
         # --- Validation Loop ---
         transformer.eval()
-        # validation
         t_loss_val = 0
-        #t_gloss_val = 0
         t_l2loss_val = 0
-        #t_fbploss_val = 0
         t_dose_mae_val = 0.0 
 
         total_psnr_val = 0
